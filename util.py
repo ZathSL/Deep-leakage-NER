@@ -5,6 +5,8 @@ import torch.nn
 from datasets import load_dataset
 from torch import cosine_similarity
 import concurrent.futures
+import torch.nn.functional as F
+
 
 def save_args(args, save_path):
     file = open(save_path + r'\args.txt', 'w')
@@ -88,6 +90,7 @@ def train_for_loss(args, model_name, model, loss_fn, batch_size, gt_data, gt_lab
 
 def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer, true_dy_dx):
     sentence = []
+    random.seed(24)
     for i in range(batch_size):
         text = ''
         for _ in range(max_length):
@@ -115,12 +118,20 @@ def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer
 def label_to_onehot(target, num_classes=100):
     target = torch.unsqueeze(target, 1)
     onehot_target = torch.zeros(target.size(0), num_classes, device=target.device)
-    onehot_target.scatter_(1, target, 1)
+
+    for i, t in enumerate(target):
+        if t == -100:
+            continue
+        else:
+            onehot_target[i][t] = 1.
+    #onehot_target.scatter_(1, target, 1)
+    #valid_indices = target != -100
+    #onehot_target.scatter_(1, target[valid_indices].unsqueeze(-1), 1)
     return onehot_target
 
 
-# def cross_entropy_for_onehot(pred, target):
-#    return torch.mean(torch.sum(- target * F.log_softmax(pred, dim=-1), 1))
+def cross_entropy_for_onehot(pred, target):
+    return torch.mean(torch.sum(- target * F.log_softmax(pred, dim=-1), 1))
 
 
 
@@ -145,6 +156,7 @@ def convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, v
             decoded_text = tokenizer.decode(tokenizer.convert_tokens_to_ids(sentence), skip_special_tokens=True)
             batch_sentences.append(decoded_text)
     return batch_sentences
+
 
 
 def convert_emb_to_text(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds):
@@ -177,51 +189,19 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
     print(" Sto caricando gli embeddings del vocabolario ")
     vocabulary_embeds = {}
     vocabulary = tokenizer.get_vocab()
-    # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:10]}
+    # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:100]}
     # Precompute embeddings for the vocabulary
     for word in vocabulary.keys():
         encoding = tokenizer(
             word,
             return_tensors='pt',
-            padding=True,
-            truncation=True,
-            max_length=max_length
+            padding=False
         )
-        embedding_word = model(**encoding)['hidden_states'][0]
-        sentence_encoding = embedding_word.mean(dim=1)
-        vocabulary_embeds[word] = sentence_encoding.clone().detach().to(device)
-    print(" Ho terminato di caricare gli embeddings del vocabolario ")
-    return vocabulary_embeds
 
-
-def get_embedding(word, tokenizer, model, device, max_length):
-    encoding = tokenizer(
-        word,
-        return_tensors='pt',
-        padding=True,
-        truncation=True,
-        max_length=max_length
-    )
-    embedding_word = model(**encoding)['hidden_states'][0]
-    sentence_encoding = embedding_word.mean(dim=1)
-
-    return word, sentence_encoding.clone().detach().to(device)
-
-
-def get_vocabulary_embeds_parallel(tokenizer, model, device, max_length):
-    print(" Sto caricando gli embeddings del vocabolario ")
-    vocabulary_embeds = {}
-    vocabulary = tokenizer.get_vocab()
-    # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:10]}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_word = {executor.submit(get_embedding, word, copy.deepcopy(tokenizer), model, device, max_length): word for word in vocabulary.keys()}
-        for future in concurrent.futures.as_completed(future_to_word):
-            word = future_to_word[future]
-            try:
-                vocabulary_embeds[word] = future.result()[1]
-            except Exception as exc:
-                print('%r generated an exception: %s' % (word, exc))
-
+        #embedding_word = model(**encoding)['hidden_states'][0]
+        embedding_word = model(**encoding)['hidden_states'][0][:, 1:-1, :]
+        # FIXME: prendo il mean oppure prendo la parte centrale?
+        vocabulary_embeds[word] = embedding_word.mean(dim=1).clone().detach().to(device)
     print(" Ho terminato di caricare gli embeddings del vocabolario ")
     return vocabulary_embeds
 
@@ -242,8 +222,9 @@ def encode_labels(labels_encoding, model):
 def encode_labels_ids(labels_encoding):
     batch_labels = []
     for batch in labels_encoding:
-        for token_pred in batch[0]:
+        for token_pred in batch:
             probabilities = torch.nn.functional.softmax(token_pred, dim=0)
             label_index = torch.argmax(probabilities)
             batch_labels.append(label_index.item())
     return batch_labels
+

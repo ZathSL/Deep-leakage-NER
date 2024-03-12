@@ -78,9 +78,9 @@ def main(args):
     tokenizer_name_or_path = args.tokenizer_name if args.tokenizer_name else args.model_name_or_path
 
     tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_name_or_path, use_fast=True, trust_remote_code=args.trust_remote_code, add_special_tokens=True,
+        tokenizer_name_or_path, use_fast=True, trust_remote_code=args.trust_remote_code,
         padding=True, return_tensor='pt', max_length=args.max_length, truncation=True
-    )
+    ) #FIXME vocab_size
 
     if args.model_name_or_path:
         model = AutoModelForTokenClassification.from_pretrained(
@@ -165,7 +165,7 @@ def main(args):
     )
     model.save_pretrained("checkpoint_iniziale")
 
-    vocabulary_embeds = util.get_vocabulary_embeds_parallel(tokenizer, model, device, args.max_length)# Cache for embeddings
+    vocabulary_embeds = util.get_vocabulary_embeds(tokenizer, model, device, args.max_length)# Cache for embeddings
 
     for er in range(args.experiment_rounds):
         print("======= Repeat {} ========".format(er))
@@ -173,7 +173,8 @@ def main(args):
         model = AutoModelForTokenClassification.from_pretrained("checkpoint_iniziale")
         model = model.to(device)
 
-        criterion = util.init_loss(args.model_name_or_path).to(device)
+        #criterion = util.init_loss(args.model_name_or_path).to(device)
+        criterion = util.cross_entropy_for_onehot
 
         # (Registro)
         # Lista per memorizzare i dati di ground truth
@@ -191,25 +192,31 @@ def main(args):
             # Stampa l'iterazione corrente del ciclo
             print("------Epoch {}------".format(epoch))
             for iter, batch in enumerate(train_dataloader):
+                gt_onehot_label_batch = []
+                for sentence in batch['labels'].tolist():
+                    gt_onehot_label_batch += [util.label_to_onehot(torch.tensor(sentence), num_labels).tolist()]
+
                 optimizer.zero_grad()
                 #gt_data_list.append(batch['input_ids'].tolist())
                 #gt_label_list.append(batch['labels'].tolist())
                 batch.to(device)
-                outputs = model(batch['input_ids'], batch['attention_mask'])
-                logits = outputs.logits.permute(0, 2, 1)
-                loss = criterion(logits, batch['labels'])
+                pred = model(batch['input_ids'], batch['attention_mask'])
+
+                #logits = pred.logits.permute(0, 2, 1)
+                loss = criterion(pred.logits, torch.tensor(gt_onehot_label_batch).to(device))
 
                 # Aggiunge il valore della loss alla lista delle loss
                 true_loss_list.append(loss.item())
 
-                if loss.item() < 1e-6 or args.global_iterations < iter:
+                # if loss.item() < 1e-6 or args.global_iterations < iter:
+                #   break
+                if args.global_iterations < iter:
                     break
 
                 # Calcola il gradiente rispetto ai parametri del modello
                 # Questo è il passo principale dell'ottimizzazione, poiché i gradienti
                 # verranno utilizzati per aggiornare i pesi del modello durante l'ottimizzazione
                 dy_dx = torch.autograd.grad(loss, model.parameters(), retain_graph=True)
-
 
                 # =========================================== DP-SGD ============================================ #
                 # Implementazione Differentially Private Stochastic Gradient Descent
@@ -262,7 +269,8 @@ def main(args):
                                                er=er,
                                                max_length=args.max_length,
                                                tokenizer=tokenizer,
-                                               vocabulary_embeds=vocabulary_embeds)
+                                               vocabulary_embeds=vocabulary_embeds,
+                                               alpha=args.alpha)
                 # ================================================================================================== #
                 # Itera attraverso i parametri del modello ('server_param') e i gradienti calcolati ('grad_param')
                 # Ogni parametro del modello viene associato al suo corrispettivo gradiente calcolato
@@ -368,6 +376,7 @@ if __name__ == '__main__':
     parser.add_argument("--dlg_attack_rounds", type=int, default=1, help="the rounds of dlg attack")
     parser.add_argument("--dlg_iterations", type=int, default=200, help="the iterations for dlg attack")
     parser.add_argument("--dlg_lr", type=float, default=0.05, help="learning rate for dlg attack")
+    parser.add_argument("--alpha", type=float, default=10, help="alpha used to calculate gradient distance")
 
     # param for DP-SGD
     parser.add_argument("--is_DP", type=int, default=0, help="if use DP")
