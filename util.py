@@ -1,8 +1,9 @@
 import copy
 import random
-
+import numpy as np
 import torch.nn
 from datasets import load_dataset
+from sklearn.decomposition import PCA
 from torch import cosine_similarity
 import concurrent.futures
 import torch.nn.functional as F
@@ -189,7 +190,7 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
     print(" Sto caricando gli embeddings del vocabolario ")
     vocabulary_embeds = {}
     vocabulary = tokenizer.get_vocab()
-    # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:100]}
+    #vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:100]}
     # Precompute embeddings for the vocabulary
     for word in vocabulary.keys():
         encoding = tokenizer(
@@ -228,3 +229,21 @@ def encode_labels_ids(labels_encoding):
             batch_labels.append(label_index.item())
     return batch_labels
 
+
+def calculate_similarity(batch_sentences_dummy, batch_sentences_real):
+    pca = PCA(n_components=2)
+    similarity = []
+    for sentence_dummy, sentence_real in zip(batch_sentences_dummy, batch_sentences_real):
+        sentence_dummy = sentence_dummy.mean(dim=0).reshape(1, -1).clone().detach().cpu()
+        sentence_real = sentence_real.mean(dim=0).reshape(1, -1).clone().detach().cpu()
+        print(sentence_dummy.shape, sentence_real.shape)
+        exit()
+    return similarity
+
+
+
+#pca = PCA(n_components=2)
+# Devi prima ridimensionare gli embeddings a 2D per applicare la PCA
+#token_embeddings_real = token_embeds_real.reshape(-1, token_embeds_real.shape[-1])
+#pca_result_real = torch.tensor(pca.fit_transform(token_embeddings_real.cpu().detach().numpy()))
+#cos = torch.nn.CosineSimilarity(dim=1)

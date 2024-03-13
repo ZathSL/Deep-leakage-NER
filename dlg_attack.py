@@ -23,12 +23,6 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
 
     model.train()
 
-    #pca = PCA(n_components=2)
-    # Devi prima ridimensionare gli embeddings a 2D per applicare la PCA
-    #token_embeddings_real = token_embeds_real.reshape(-1, token_embeds_real.shape[-1])
-    #pca_result_real = torch.tensor(pca.fit_transform(token_embeddings_real.cpu().detach().numpy()))
-    #cos = torch.nn.CosineSimilarity(dim=1)
-
     # Esecuzione dell'attacco DLG per un numero specificato di round
     for r in range(dlg_attack_round):
         # Dizionario per registrare i risultati dell'attacco corrente
@@ -59,32 +53,19 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
             token_embeds_real = model(batch['input_ids'], attention_mask=batch['attention_mask'])['hidden_states'][0]
 
         # Richiedi i gradienti per ottimizzare
-        #token_embeds_dummy.requires_grad_(True)
-        #encoding['labels'].requires_grad_(True)
         token_embeds_dummy = torch.nn.Parameter(token_embeds_dummy, requires_grad=True)
         encoding['labels'] = torch.nn.Parameter(encoding['labels'], requires_grad=True)
-        # Inizializza l'ottimizzatore Adam per ottimizzare i dati
-        #optimizer = torch.optim.Adam([token_embeds_dummy, encoding['labels']], lr=dlg_lr)
 
-        #optimizer_data = torch.optim.Adam([token_embeds_dummy], lr=dlg_lr)
-        #optimizer_label = torch.optim.Adam([encoding['labels']], lr=dlg_lr)
-        # Esegue l'ottimizzazione Adam per un numero specificato di iterazioni
+        # Esegue l'ottimizzazione SGD per un numero specificato di iterazioni
         for c in tqdm(range(dlg_iteration)):
 
             # Funzione di chiusura per l'ottimizzazione SGD/Adam
             # Calcola la loss dummy, i gradienti rispetto ai parametri del modello
             # e la loss di gradiente tra i gradienti dummy e quelli veri
             def closure(alpha=alpha, token_embeds_dummy=token_embeds_dummy, encoding_labels=encoding['labels']):
-
-                # Azzera tutti i gradienti associati all'ottimizzatore
-                #optimizer.zero_grad()
-                #optimizer_data.zero_grad()
-                #optimizer_label.zero_grad()
-
                 dummy_pred = model(inputs_embeds=token_embeds_dummy)
                 dummy_onehot_label = F.softmax(encoding_labels, dim=-1)
-                #logits = dummy_pred.logits.permute(0, 2, 1)
-                #labels_ids = torch.tensor(util.encode_labels_ids(encoding['labels'])).unsqueeze(0).repeat(batch_size, 1).to(device)
+
                 # Calcola la loss dummy
                 loss = criterion(dummy_pred.logits, dummy_onehot_label)
 
@@ -112,41 +93,33 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 for i in grad_distance:
                     partial_mean.append(torch.sum(i))
 
-                grad_distance = torch.sum(torch.stack(partial_mean))
-                grad = torch.autograd.grad(grad_distance, [token_embeds_dummy, encoding_labels], create_graph=True, retain_graph=True)
-                token_embeds_dummy = token_embeds_dummy - dlg_lr * grad[0]
-                encoding['labels'] = encoding['labels'] - dlg_lr * grad[1]
-                '''
-                partial_sum_x = []
-                partial_sum_y = []
-                for x, y in zip(grad[0], grad[1]):
-                    partial_sum_x.append(torch.sum(x))
-                    partial_sum_y.append(torch.sum(y))
-        
-                grad = (torch.sum(torch.stack(partial_sum_x)), torch.sum(torch.stack(partial_sum_y)))
-                optimizer_data.zero_grad()
-                grad[0].backward(retain_graph=True)
-                optimizer_data.step()
-                optimizer_label.zero_grad()
-                grad[1].backward()
-                optimizer_label.step()
-                grad_distance.backward()'''
-                return token_embeds_dummy, encoding_labels
+                grad_distance_sum = torch.sum(torch.stack(partial_mean))
+                grad_data = torch.autograd.grad(grad_distance_sum, token_embeds_dummy, retain_graph=True)
+                grad_data = [dlg_lr * grad for grad in grad_data]
+                token_embeds_dummy = [x - y for x, y in zip(token_embeds_dummy, grad_data)][0]
+                del grad_data
+                grad_label = torch.autograd.grad(grad_distance, encoding_labels, retain_graph=True)
+                grad_label = [dlg_lr * grad for grad in grad_label]
+                encoding_labels = [x - y for x, y in zip(encoding_labels, grad_label)][0]
+                del grad_label
+                return token_embeds_dummy, encoding_labels, grad_distance_sum
 
-            token_embeds_dummy, encoding['labels'] = closure()
-            print(c)
+            token_embeds_dummy, encoding['labels'], grad_distance_sum = closure()
             # Salvataggio checkpoint attacco
             if c % 20 == 0:
                 batch_sentences = util.convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds)
+
                 batch_labels = util.encode_labels(labels_encoding=encoding['labels'], model=model)
                 # Aggiunge i dati dummy alla lista di dati dummy
                 attack_record['dummy_data_list'].append(batch_sentences)
-
+                attack_record['grad_loss_list'].append(grad_distance_sum)
                 # Aggiunge le etichette dummy alla lista delle etichette dummy
                 attack_record['dummy_label_list'].append(batch_labels)
                 # Calcola il sentence embedding del dato dummy e del dato reale eseguendo un average pooling
                 sentence_embedding_dummy = token_embeds_dummy.mean(dim=1)
                 sentence_embedding_real = token_embeds_real.mean(dim=1)
+
+                #cos_simil_pca = util.calculate_similarity(token_embeds_real, token_embeds_real)
 
                 # Calcola la similarità del coseno tra il dato reale ed il dato dummy ottimizzato
                 attack_record['cosine_similarity_data'] += [cosine_similarity(sentence_embedding_real, sentence_embedding_dummy).item()]
@@ -155,8 +128,6 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 print(cosine_similarity(sentence_embedding_real, sentence_embedding_dummy).item())
                 attack_record['dlg_iteration'] += [c]
 
-            # Aggiornamento dei dati dummy e label dummy
-            # optimizer.step()
 
         batch_sentences = util.convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds)
         batch_labels = util.encode_labels(encoding['labels'], model)

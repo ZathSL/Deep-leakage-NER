@@ -5,7 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="761e3f46-e266-4383-a48d-fa703dfacd46" name="Changes" comment="Push to repository">
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/dlg_attack.py" beforeDir="false" afterPath="$PROJECT_DIR$/dlg_attack.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
@@ -95,6 +94,9 @@
       <workItem from="1710206403670" duration="661000" />
       <workItem from="1710245998370" duration="3276000" />
       <workItem from="1710256954444" duration="184000" />
+      <workItem from="1710261041974" duration="3286000" />
+      <workItem from="1710267737668" duration="11111000" />
+      <workItem from="1710293587162" duration="1458000" />
     </task>
     <task id="LOCAL-00001" summary="Push to repository">
       <created>1710016601397</created>
@@ -103,7 +105,14 @@
       <option name="project" value="LOCAL" />
       <updated>1710016601397</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="Push to repository">
+      <created>1710261175085</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1710261175085</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
