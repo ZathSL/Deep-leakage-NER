@@ -59,15 +59,14 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
         # Esegue l'ottimizzazione SGD per un numero specificato di iterazioni
         for c in tqdm(range(dlg_iteration)):
 
-            # Funzione di chiusura per l'ottimizzazione SGD/Adam
-            # Calcola la loss dummy, i gradienti rispetto ai parametri del modello
-            # e la loss di gradiente tra i gradienti dummy e quelli veri
-            def closure(alpha=alpha, token_embeds_dummy=token_embeds_dummy, encoding_labels=encoding['labels']):
+######################## ATTACK ###################################################
+            def closure():
+                nonlocal token_embeds_dummy, alpha, encoding
                 dummy_pred = model(inputs_embeds=token_embeds_dummy)
-                dummy_onehot_label = F.softmax(encoding_labels, dim=-1)
+                #dummy_onehot_label = F.softmax(encoding['labels'], dim=-1)
 
                 # Calcola la loss dummy
-                loss = criterion(dummy_pred.logits, dummy_onehot_label)
+                loss = criterion(dummy_pred.logits, encoding['labels'])
 
                 # Calcola i gradienti dummy
                 dummy_dl_dw = torch.autograd.grad(loss, model.parameters(), retain_graph=True, create_graph=True, allow_unused=True)
@@ -83,50 +82,52 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                     elif 'layer.' in param_name:
                         result_e2 = edist2(gradient_dummy, gradient_real)
                         result_e1 = edist1(gradient_dummy, gradient_real)
-                        alpha *= 0.7
+                        alpha *= 0.8
                     else: # 'classifier' or 'embedding_position'
                         result_e2 = edist2(gradient_dummy, gradient_real)
                         result_e1 = edist1(gradient_dummy, gradient_real)
-                        alpha *= 0.7
+                        alpha *= 0.8
                     grad_distance.append(result_e2 + alpha * result_e1)
                 partial_mean = []
                 for i in grad_distance:
                     partial_mean.append(torch.sum(i))
-
                 grad_distance_sum = torch.sum(torch.stack(partial_mean))
-                grad_data = torch.autograd.grad(grad_distance_sum, token_embeds_dummy, retain_graph=True)
-                grad_data = [dlg_lr * grad for grad in grad_data]
-                token_embeds_dummy = [x - y for x, y in zip(token_embeds_dummy, grad_data)][0]
-                del grad_data
-                grad_label = torch.autograd.grad(grad_distance, encoding_labels, retain_graph=True)
-                grad_label = [dlg_lr * grad for grad in grad_label]
-                encoding_labels = [x - y for x, y in zip(encoding_labels, grad_label)][0]
-                del grad_label
-                return token_embeds_dummy, encoding_labels, grad_distance_sum
 
-            token_embeds_dummy, encoding['labels'], grad_distance_sum = closure()
+                grad = torch.autograd.grad(grad_distance_sum, token_embeds_dummy, retain_graph=True)[0]
+
+                grad = dlg_lr * grad
+                token_embeds_dummy = token_embeds_dummy - grad
+                grad = torch.autograd.grad(grad_distance_sum, encoding['labels'], retain_graph=True)[0]
+                grad = dlg_lr * grad
+                encoding['labels'] = encoding['labels'] - grad
+                probabilities = F.softmax(encoding['labels'], dim=2)
+                predicted_classes = torch.argmax(probabilities, dim=2)
+                dummy_onehot_label = []
+                for sentence in predicted_classes.tolist():
+                    dummy_onehot_label += [util.label_to_onehot(torch.tensor(sentence), num_labels).tolist()]
+                dummy_onehot_label = torch.tensor(dummy_onehot_label).to(device).requires_grad_(True)
+                encoding['labels'] = dummy_onehot_label
+                return grad_distance_sum
+            ########################################################################################
+            grad_distance_sum = closure()
             # Salvataggio checkpoint attacco
             if c % 20 == 0:
                 batch_sentences = util.convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds)
-
                 batch_labels = util.encode_labels(labels_encoding=encoding['labels'], model=model)
                 # Aggiunge i dati dummy alla lista di dati dummy
                 attack_record['dummy_data_list'].append(batch_sentences)
                 attack_record['grad_loss_list'].append(grad_distance_sum)
                 # Aggiunge le etichette dummy alla lista delle etichette dummy
                 attack_record['dummy_label_list'].append(batch_labels)
-                # Calcola il sentence embedding del dato dummy e del dato reale eseguendo un average pooling
-                sentence_embedding_dummy = token_embeds_dummy.mean(dim=1)
-                sentence_embedding_real = token_embeds_real.mean(dim=1)
-
-                #cos_simil_pca = util.calculate_similarity(token_embeds_real, token_embeds_real)
-
                 # Calcola la similarità del coseno tra il dato reale ed il dato dummy ottimizzato
-                attack_record['cosine_similarity_data'] += [cosine_similarity(sentence_embedding_real, sentence_embedding_dummy).item()]
+                cos_sim = util.calculate_similarity(token_embeds_dummy, token_embeds_real)
+                attack_record['cosine_similarity_data'] += cos_sim
                 print(batch_sentences)
                 print(batch_labels)
-                print(cosine_similarity(sentence_embedding_real, sentence_embedding_dummy).item())
+                print(cos_sim)
+                print(grad_distance_sum)
                 attack_record['dlg_iteration'] += [c]
+                del batch_sentences, batch_labels, cos_sim, grad_distance_sum
 
 
         batch_sentences = util.convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds)
@@ -134,10 +135,7 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
         attack_record['last_dummy_data'] = batch_sentences
         attack_record['last_dummy_label'] = batch_labels
 
-        sentence_embedding_dummy = token_embeds_dummy.mean(dim=1)
-        sentence_embedding_real = token_embeds_real.mean(dim=1)
-
-        attack_record['last_cosine_similarity_data'] = cosine_similarity(sentence_embedding_real, sentence_embedding_dummy).tolist()
+        attack_record['last_cosine_similarity_data'] = util.cosine_similarity(token_embeds_dummy, token_embeds_real)
 
         attack_record_list.append(attack_record)
         pickle.dump(attack_record, open(save_path+'/attack_record_er={}_gloiter={}_dlground={}.pickle'.format(er, global_iter, r), 'wb'))

@@ -1,5 +1,5 @@
 python main.py `
---experiment_name exp1_0.1_alpha_1 `
+--experiment_name exp1_0.05_alpha_15 `
 --model_name_or_path distilbert/distilbert-base-uncased `
 --learning_rate 0.05 `
 --num_train_epochs 1 `
@@ -10,8 +10,8 @@ python main.py `
 --dlg_attack_interval 500 `
 --dlg_attack_rounds 1 `
 --dlg_iterations 500 `
---dlg_lr 0.1 `
---alpha 1 `
+--dlg_lr 0.05 `
+--alpha 15 `
 --is_DP 0 `
 --dp_C 0.0 `
 --dp_epsilon 0 `

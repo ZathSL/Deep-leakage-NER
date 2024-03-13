@@ -7,6 +7,7 @@ from sklearn.decomposition import PCA
 from torch import cosine_similarity
 import concurrent.futures
 import torch.nn.functional as F
+from sklearn.metrics.pairwise import cosine_similarity as cos
 
 
 def save_args(args, save_path):
@@ -93,15 +94,17 @@ def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer
     sentence = []
     random.seed(24)
     for i in range(batch_size):
-        text = ''
-        for _ in range(max_length):
+        text = '[CLS] '
+        for _ in range(max_length-2):
             indice_parola_random = random.randint(0, len(tokenizer.vocab) - 1)
             parola_random = tokenizer.convert_ids_to_tokens(indice_parola_random)
             if '#' in parola_random:
                 text += 'hello' + ' '
             else:
                 text += parola_random + ' '
+        text += '[SEP]'
         sentence.append(text)
+
     encoding = tokenizer(
         sentence,
         return_tensors='pt',
@@ -110,8 +113,14 @@ def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer
         max_length=max_length
     )
     with torch.no_grad():
-        dummy_labels = torch.nn.Parameter(torch.rand((batch_size, max_length, num_labels)) * (num_labels - 1))
-        encoding['labels'] = dummy_labels
+        dummy_labels = torch.nn.Parameter(torch.rand((batch_size, max_length)) * (num_labels - 1)).round()
+        for batch in dummy_labels:
+            batch[0] = batch[-1] = -100
+        dummy_onehot_label = []
+        for sentence in dummy_labels.tolist():
+            dummy_onehot_label += [label_to_onehot(torch.tensor(sentence), num_labels).tolist()]
+        dummy_onehot_label = torch.tensor(dummy_onehot_label)
+        encoding['labels'] = dummy_onehot_label
         encoding.to(device)
     return encoding
 
@@ -121,13 +130,10 @@ def label_to_onehot(target, num_classes=100):
     onehot_target = torch.zeros(target.size(0), num_classes, device=target.device)
 
     for i, t in enumerate(target):
-        if t == -100:
+        if t.int() == -100:
             continue
         else:
-            onehot_target[i][t] = 1.
-    #onehot_target.scatter_(1, target, 1)
-    #valid_indices = target != -100
-    #onehot_target.scatter_(1, target[valid_indices].unsqueeze(-1), 1)
+            onehot_target[i][t.int()] = 1.
     return onehot_target
 
 
@@ -157,7 +163,6 @@ def convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, v
             decoded_text = tokenizer.decode(tokenizer.convert_tokens_to_ids(sentence), skip_special_tokens=True)
             batch_sentences.append(decoded_text)
     return batch_sentences
-
 
 
 def convert_emb_to_text(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds):
@@ -190,7 +195,7 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
     print(" Sto caricando gli embeddings del vocabolario ")
     vocabulary_embeds = {}
     vocabulary = tokenizer.get_vocab()
-    #vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:100]}
+    # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:10]}
     # Precompute embeddings for the vocabulary
     for word in vocabulary.keys():
         encoding = tokenizer(
@@ -231,13 +236,11 @@ def encode_labels_ids(labels_encoding):
 
 
 def calculate_similarity(batch_sentences_dummy, batch_sentences_real):
-    pca = PCA(n_components=2)
     similarity = []
     for sentence_dummy, sentence_real in zip(batch_sentences_dummy, batch_sentences_real):
-        sentence_dummy = sentence_dummy.mean(dim=0).reshape(1, -1).clone().detach().cpu()
-        sentence_real = sentence_real.mean(dim=0).reshape(1, -1).clone().detach().cpu()
-        print(sentence_dummy.shape, sentence_real.shape)
-        exit()
+        sentence_dummy = sentence_dummy.mean(dim=0).unsqueeze(0)
+        sentence_real = sentence_real.mean(dim=0).unsqueeze(0)
+        similarity += [cosine_similarity(sentence_real, sentence_dummy).item()]
     return similarity
 
 

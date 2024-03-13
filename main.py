@@ -79,7 +79,7 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_name_or_path, use_fast=True, trust_remote_code=args.trust_remote_code,
-        padding=True, return_tensor='pt', max_length=args.max_length, truncation=True, skip_special_tokens=True
+        padding=True, return_tensor='pt', max_length=args.max_length, truncation=True, vocab_size=30000
     ) #FIXME vocab_size
 
     if args.model_name_or_path:
