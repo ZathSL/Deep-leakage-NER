@@ -13,7 +13,6 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                gt_data, gt_label, save_path, device, dataset, num_labels, er, max_length, tokenizer, vocabulary_embeds, alpha):
     # Inizializza lista per registrare i risultati dell'attacco
     attack_record_list = list()
-
     # Inizializza una funzione loss per il modello adottato
     #criterion = util.init_loss(model_name)
     criterion = util.cross_entropy_for_onehot
@@ -47,10 +46,13 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
         # Inizializzazione dei dati e delle etichette dummy utilizzati durante l'attacco
         encoding = util.init_dummy_data(batch_size=batch_size, model=model, max_length=max_length, device=device,num_labels=num_labels, tokenizer=tokenizer, true_dy_dx=true_dy_dx)
 
+        # Estrai l'embedding del modello
+        embedding = model.get_input_embeddings()
+
         # Calcola i token embedding dummy e reale
         with torch.no_grad():
-            token_embeds_dummy = model(encoding['input_ids'], attention_mask=encoding['attention_mask'])['hidden_states'][0]
-            token_embeds_real = model(batch['input_ids'], attention_mask=batch['attention_mask'])['hidden_states'][0]
+            token_embeds_dummy = embedding(encoding['input_ids'])
+            token_embeds_real = embedding(batch['input_ids'])
 
         # Richiedi i gradienti per ottimizzare
         token_embeds_dummy = torch.nn.Parameter(token_embeds_dummy, requires_grad=True)
@@ -116,33 +118,27 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 batch_labels = util.encode_labels(labels_encoding=encoding['labels'], model=model)
                 # Aggiunge i dati dummy alla lista di dati dummy
                 attack_record['dummy_data_list'].append(batch_sentences)
-                attack_record['grad_loss_list'].append(grad_distance_sum)
+                attack_record['grad_loss_list'].append(grad_distance_sum.item())
                 # Aggiunge le etichette dummy alla lista delle etichette dummy
                 attack_record['dummy_label_list'].append(batch_labels)
                 # Calcola la similarità del coseno tra il dato reale ed il dato dummy ottimizzato
                 cos_sim = util.calculate_similarity(token_embeds_dummy, token_embeds_real)
-                attack_record['cosine_similarity_data'] += cos_sim
-                print(batch_sentences)
-                print(batch_labels)
-                print(cos_sim)
-                print(grad_distance_sum)
-                attack_record['dlg_iteration'] += [c]
+                attack_record['cosine_similarity_data'].append(cos_sim)
                 del batch_sentences, batch_labels, cos_sim, grad_distance_sum
-
 
         batch_sentences = util.convert_emb_to_text_parallel(token_embeds_dummy, tokenizer, model, device, vocabulary_embeds)
         batch_labels = util.encode_labels(encoding['labels'], model)
         attack_record['last_dummy_data'] = batch_sentences
         attack_record['last_dummy_label'] = batch_labels
 
-        attack_record['last_cosine_similarity_data'] = util.cosine_similarity(token_embeds_dummy, token_embeds_real)
+        attack_record['last_cosine_similarity_data'] = util.calculate_similarity(token_embeds_dummy, token_embeds_real)
 
         attack_record_list.append(attack_record)
         pickle.dump(attack_record, open(save_path+'/attack_record_er={}_gloiter={}_dlground={}.pickle'.format(er, global_iter, r), 'wb'))
 
         list_pred = []
-        for batch in attack_record['last_dummy_label']:
-            for label in batch:
+        for batch_i in attack_record['last_dummy_label']:
+            for label in batch_i:
                 list_pred.append(model.config.label2id[label])
 
         list_real = []
@@ -156,12 +152,13 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 list_pred_final.append(pred)
                 list_real_final.append(real)
         del(list_real, list_pred)
+        # Calcola le metriche in riferimento al recupero delle label
         metrics_dict = {'accuracy': metrics.accuracy_score(list_real_final, list_pred_final),
                         'f1': metrics.f1_score(list_real_final, list_pred_final, average='micro'),
                         'precision': metrics.precision_score(list_real_final, list_pred_final, average='micro'),
                         'recall': metrics.recall_score(list_real_final, list_pred_final, average='micro')}
 
-        # Recovery rate & Rouge
+        # Recovery rate & Rouge in riferimento al recupero dei dati di training
         rouge = Rouge()
         recovery_rate = []
         metrics_dict['rouge-1'] = []

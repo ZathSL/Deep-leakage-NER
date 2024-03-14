@@ -196,6 +196,9 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
     vocabulary_embeds = {}
     vocabulary = tokenizer.get_vocab()
     # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:10]}
+
+    embedding = model.get_input_embeddings()
+
     # Precompute embeddings for the vocabulary
     for word in vocabulary.keys():
         encoding = tokenizer(
@@ -204,9 +207,8 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
             padding=False
         )
 
-        #embedding_word = model(**encoding)['hidden_states'][0]
-        embedding_word = model(**encoding)['hidden_states'][0][:, 1:-1, :]
-        # FIXME: prendo il mean oppure prendo la parte centrale?
+        embedding_word = embedding(encoding['input_ids'])
+        print(embedding_word.shape)
         vocabulary_embeds[word] = embedding_word.mean(dim=1).clone().detach().to(device)
     print(" Ho terminato di caricare gli embeddings del vocabolario ")
     return vocabulary_embeds
