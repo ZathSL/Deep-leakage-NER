@@ -90,39 +90,55 @@ def train_for_loss(args, model_name, model, loss_fn, batch_size, gt_data, gt_lab
         gt_label_final = gt_label.copy()
 
 
+def cross(pred, target):
+    print(pred)
+    log_probs = F.log_softmax(pred, dim=-1)
+    print(log_probs)
+    index = target.view(-1, 1)
+    log_probs = log_probs.gather(1, index).squeeze(1)
+
+    loss = -log_probs.mean()
+    print(loss)
+
 def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer, true_dy_dx):
     sentence = []
-    random.seed(24)
+    # random.seed(24)
     for i in range(batch_size):
-        text = '[CLS] '
-        for _ in range(max_length-2):
+        text = [tokenizer.convert_tokens_to_ids('[CLS]')]
+        for _ in range(max_length - 2):
             indice_parola_random = random.randint(0, len(tokenizer.vocab) - 1)
-            parola_random = tokenizer.convert_ids_to_tokens(indice_parola_random)
-            if '#' in parola_random:
-                text += 'hello' + ' '
-            else:
-                text += parola_random + ' '
-        text += '[SEP]'
+            text += [indice_parola_random]
+        text += [tokenizer.convert_tokens_to_ids('[SEP]')]
         sentence.append(text)
 
-    encoding = tokenizer(
-        sentence,
-        return_tensors='pt',
-        padding=True,
-        truncation=True,
-        max_length=max_length
-    )
     with torch.no_grad():
         dummy_labels = torch.nn.Parameter(torch.rand((batch_size, max_length)) * (num_labels - 1)).round()
         for batch in dummy_labels:
             batch[0] = batch[-1] = -100
         dummy_onehot_label = []
-        for sentence in dummy_labels.tolist():
-            dummy_onehot_label += [label_to_onehot(torch.tensor(sentence), num_labels).tolist()]
-        dummy_onehot_label = torch.tensor(dummy_onehot_label)
-        encoding['labels'] = dummy_onehot_label
-        encoding.to(device)
-    return encoding
+        for s in dummy_labels.tolist():
+            dummy_onehot_label += [label_to_onehot(torch.tensor(s), num_labels).tolist()]
+        dummy_onehot_label = torch.tensor(dummy_onehot_label).to(device)
+        sentence = torch.tensor(sentence).to(device)
+    return sentence, dummy_onehot_label
+
+
+def init_dummy_data2(batch_size, model, max_length, device, num_labels, tokenizer, true_dy_dx):
+    sentence = []
+    # random.seed(24)
+    for i in range(batch_size):
+        text = [tokenizer.convert_tokens_to_ids('[CLS]')]
+        for _ in range(max_length - 2):
+            indice_parola_random = random.randint(0, len(tokenizer.vocab) - 1)
+            text += [indice_parola_random]
+        text += [tokenizer.convert_tokens_to_ids('[SEP]')]
+        sentence.append(text)
+
+    with torch.no_grad():
+        dummy_labels = torch.nn.Parameter(F.softmax(torch.randn((batch_size, max_length, num_labels)),dim=2).to(device))
+        sentence = torch.tensor(sentence).to(device)
+    return sentence, dummy_labels
+
 
 
 def label_to_onehot(target, num_classes=100):
@@ -138,9 +154,11 @@ def label_to_onehot(target, num_classes=100):
 
 
 def cross_entropy_for_onehot(pred, target):
-    return torch.mean(torch.sum(- target * F.log_softmax(pred, dim=-1), 1))
+    return torch.mean(torch.mean(torch.sum(- target * F.log_softmax(pred, dim=2), 2), 1), 0)
 
 
+#def cross_entropy_for_onehot(pred, target):
+#    return torch.mean(torch.sum(- target * F.log_softmax(pred, dim=-1), 1))
 
 
 def find_best_match(args):
@@ -195,7 +213,7 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
     print(" Sto caricando gli embeddings del vocabolario ")
     vocabulary_embeds = {}
     vocabulary = tokenizer.get_vocab()
-    # vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:10]}
+    vocabulary = {k: vocabulary[k] for k in list(vocabulary)[:10]}
 
     embedding = model.get_input_embeddings()
 
@@ -208,7 +226,6 @@ def get_vocabulary_embeds(tokenizer, model, device, max_length):
         )
 
         embedding_word = embedding(encoding['input_ids'])
-        print(embedding_word.shape)
         vocabulary_embeds[word] = embedding_word.mean(dim=1).clone().detach().to(device)
     print(" Ho terminato di caricare gli embeddings del vocabolario ")
     return vocabulary_embeds
@@ -246,9 +263,25 @@ def calculate_similarity(batch_sentences_dummy, batch_sentences_real):
     return similarity
 
 
+def convert_embeddings_to_text(batch_embeddings, vocab_embeddings, tokenizer, top_k=1):
+    list_batch = []
+    for batch in batch_embeddings:
+        sentence_token = []
+        for token in batch:
+            token = token.unsqueeze(0)
+            similarities = cos(token.detach().cpu().numpy(), vocab_embeddings.detach().cpu().numpy())
+            top_indices = torch.tensor([torch.tensor(similarity).argsort(descending=True)[:top_k] for similarity in similarities])
+            sentence_token += top_indices.tolist()
 
-#pca = PCA(n_components=2)
-# Devi prima ridimensionare gli embeddings a 2D per applicare la PCA
-#token_embeddings_real = token_embeds_real.reshape(-1, token_embeds_real.shape[-1])
-#pca_result_real = torch.tensor(pca.fit_transform(token_embeddings_real.cpu().detach().numpy()))
-#cos = torch.nn.CosineSimilarity(dim=1)
+        list_batch += [tokenizer.decode(sentence_token)]
+    return list_batch
+
+
+class CustomCrossEntropyLoss(torch.nn.Module):
+    def __init__(self):
+        super(CustomCrossEntropyLoss, self).__init__()
+
+    def forward(self, pred, target):
+        pred = F.log_softmax(pred, dim=2)
+        loss = -torch.sum(target * F.log_softmax(pred, dim=2), dim=2)
+        return torch.mean(torch.mean(loss, dim=1), dim=0)
