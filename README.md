@@ -17,6 +17,7 @@ python main.py `
 --dp_epsilon 0 `
 --dp_delta 0
 
+decay_rate 20 e power 0.9
 
 !python main.py --experiment_name bert_alpha_10_dp_0_lr_0.05_len_16 \
 --model_name_or_path google-bert/bert-base-uncased \

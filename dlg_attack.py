@@ -1,4 +1,5 @@
 import pickle
+import re
 
 import torch
 from sklearn import metrics
@@ -10,7 +11,7 @@ import torch.nn.functional as F
 
 
 def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg_iteration, dlg_lr, epoch, global_iter, model_name,
-               gt_data, gt_label, save_path, device, dataset, num_labels, er, max_length, tokenizer, alpha):
+               gt_data, gt_label, save_path, device, dataset, num_labels, er, max_length, tokenizer, decay_rate_alpha):
     # Inizializza lista per registrare i risultati dell'attacco
     attack_record_list = list()
 
@@ -67,7 +68,7 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
         for c in tqdm(range(dlg_iteration)):
 ######################## ATTACK ###################################################
             def closure():
-                nonlocal token_embeds_dummy, alpha, dummy_labels
+                nonlocal token_embeds_dummy, dummy_labels
                 dummy_pred = model(inputs_embeds=token_embeds_dummy)
 
                 # Calcola la loss dummy
@@ -78,8 +79,30 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 dummy_dl_dw = torch.autograd.grad(loss, model.parameters(), create_graph=True, allow_unused=True)
 
                 grad_distance = []
+                pattern = r'\d+\.?\d*'
+                tmp = 'embedding'
+                # Decadimento di alpha tramite la legge di potenza
+                initial_alpha = alpha = 1
+                # Tasso di decadimento (più basso decadimento più lento)
+                decay_rate = 10
+                # Decadimento in base al numero di iterazioni, 1 implica decadimento lineare
+                power = 5
+                scheduler = util.PowerDecayScheduler(initial_alpha, decay_rate, power)
+
                 # Stampa i nomi dei parametri e i relativi gradienti
                 for (param_name, _), gradient_dummy, gradient_real in zip(model.named_parameters(), dummy_dl_dw, true_dy_dx):
+                    if tmp not in param_name:
+                        #alpha *= 0.6
+                        scheduler.step()
+                        alpha = scheduler.get_alpha()
+                        if 'embedding' in param_name:
+                            tmp = 'embedding'
+                        elif re.findall(pattern, param_name):
+                            tmp = str(float(re.findall(pattern, param_name)[0]).__round__())
+                        elif 'classifier' in param_name:
+                            tmp = 'classifier'
+
+
                     if 'embeddings.word_embeddings.weight' in param_name:
                         continue
                     elif 'embeddings' in param_name:
@@ -88,19 +111,25 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                     elif 'layer.' in param_name:
                         result_e2 = edist2(gradient_dummy, gradient_real)
                         result_e1 = edist1(gradient_dummy, gradient_real)
-                        alpha *= 0.8
+                        #alpha *= 0.4 #0.9 e 0.7 it's ok
+                        #scheduler.step()
+                        #alpha = scheduler.get_alpha()
                     else: # 'classifier' or 'embedding_position'
                         result_e2 = edist2(gradient_dummy, gradient_real)
                         result_e1 = edist1(gradient_dummy, gradient_real)
-                        alpha *= 0.8
+                        #alpha *= 0.4
+                        #scheduler.step()
+                        #alpha = scheduler.get_alpha()
+
                     grad_distance.append(result_e2 + alpha * result_e1)
-                partial_mean = []
+
+                partial_sum = []
                 for i in grad_distance:
-                    partial_mean.append(torch.sum(i))
-                grad_distance_sum = torch.sum(torch.stack(partial_mean))
+                    partial_sum.append(torch.sum(i))
+                grad_distance_mean = torch.mean(torch.stack(partial_sum))
                 # Passo di ottimizzazione nei dati e label dummy
                 optimizer.zero_grad()
-                grad_distance_sum.backward(retain_graph=True)
+                grad_distance_mean.backward(retain_graph=True)
                 optimizer.step()
                 #grad = torch.autograd.grad(grad_distance_sum, [token_embeds_dummy, dummy_labels], retain_graph=True)
 
@@ -116,7 +145,7 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 #print(dummy_labels)
                 #dummy_labels = F.softmax(dummy_labels, dim=2)
 
-                return grad_distance_sum
+                return grad_distance_mean
             ########################################################################################
             grad_distance_sum = closure()
 

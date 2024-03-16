@@ -270,7 +270,7 @@ def main(args):
                                                er=er,
                                                max_length=args.max_length,
                                                tokenizer=tokenizer,
-                                               alpha=args.alpha)
+                                               decay_rate_alpha=args.decay_rate_alpha)
                 # ================================================================================================== #
                 # Itera attraverso i parametri del modello ('server_param') e i gradienti calcolati ('grad_param')
                 # Ogni parametro del modello viene associato al suo corrispettivo gradiente calcolato
@@ -376,7 +376,7 @@ if __name__ == '__main__':
     parser.add_argument("--dlg_attack_rounds", type=int, default=1, help="the rounds of dlg attack")
     parser.add_argument("--dlg_iterations", type=int, default=200, help="the iterations for dlg attack")
     parser.add_argument("--dlg_lr", type=float, default=0.05, help="learning rate for dlg attack")
-    parser.add_argument("--alpha", type=float, default=10, help="alpha used to calculate gradient distance")
+    parser.add_argument("--decay_rate_alpha", type=float, default=0.09, help="decay rate for power law")
 
     # param for DP-SGD
     parser.add_argument("--is_DP", type=int, default=0, help="if use DP")

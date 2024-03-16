@@ -90,19 +90,10 @@ def train_for_loss(args, model_name, model, loss_fn, batch_size, gt_data, gt_lab
         gt_label_final = gt_label.copy()
 
 
-def cross(pred, target):
-    print(pred)
-    log_probs = F.log_softmax(pred, dim=-1)
-    print(log_probs)
-    index = target.view(-1, 1)
-    log_probs = log_probs.gather(1, index).squeeze(1)
-
-    loss = -log_probs.mean()
-    print(loss)
 
 def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer, true_dy_dx):
     sentence = []
-    # random.seed(24)
+    random.seed(24)
     for i in range(batch_size):
         text = [tokenizer.convert_tokens_to_ids('[CLS]')]
         for _ in range(max_length - 2):
@@ -125,7 +116,8 @@ def init_dummy_data(batch_size, model, max_length, device, num_labels, tokenizer
 
 def init_dummy_data2(batch_size, model, max_length, device, num_labels, tokenizer, true_dy_dx):
     sentence = []
-    # random.seed(24)
+    random.seed(24)
+    torch.manual_seed(24)
     for i in range(batch_size):
         text = [tokenizer.convert_tokens_to_ids('[CLS]')]
         for _ in range(max_length - 2):
@@ -285,3 +277,16 @@ class CustomCrossEntropyLoss(torch.nn.Module):
         pred = F.log_softmax(pred, dim=2)
         loss = -torch.sum(target * F.log_softmax(pred, dim=2), dim=2)
         return torch.mean(torch.mean(loss, dim=1), dim=0)
+
+class PowerDecayScheduler:
+    def __init__(self, initial_alpha, decay_rate, power):
+        self.initial_alpha = initial_alpha
+        self.decay_rate = decay_rate
+        self.power = power
+        self.iteration_count = 0
+
+    def step(self):
+        self.iteration_count += 1
+
+    def get_alpha(self):
+        return self.initial_alpha * (1 + self.decay_rate * self.iteration_count) ** (-self.power)
