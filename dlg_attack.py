@@ -33,6 +33,14 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                          'last_dummy_label': [], 'epoch': epoch, 'global_iteration': global_iter, 'model_name': model_name,
                          'gt_data': [], 'gt_label': [], 'cosine_similarity_data': []}
 
+        # Decadimento di alpha tramite la legge di potenza
+        initial_alpha = alpha = 1
+        # Tasso di decadimento (più basso decadimento più lento)
+        decay_rate = 10
+        # Decadimento in base al numero di iterazioni, 1 implica decadimento lineare
+        power = 5
+        scheduler = util.PowerDecayScheduler(initial_alpha, decay_rate, power)
+
         # Memorizza l'input di training da rubare
         for data in gt_data:
             attack_record['gt_data'].append(tokenizer.decode(data))
@@ -81,13 +89,6 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                 grad_distance = []
                 pattern = r'\d+\.?\d*'
                 tmp = 'embedding'
-                # Decadimento di alpha tramite la legge di potenza
-                initial_alpha = alpha = 1
-                # Tasso di decadimento (più basso decadimento più lento)
-                decay_rate = 10
-                # Decadimento in base al numero di iterazioni, 1 implica decadimento lineare
-                power = 5
-                scheduler = util.PowerDecayScheduler(initial_alpha, decay_rate, power)
 
                 # Stampa i nomi dei parametri e i relativi gradienti
                 for (param_name, _), gradient_dummy, gradient_real in zip(model.named_parameters(), dummy_dl_dw, true_dy_dx):
@@ -201,29 +202,30 @@ def dlg_attack(args, batch, batch_size, model, true_dy_dx, dlg_attack_round, dlg
                         'recall': metrics.recall_score(list_real_final, list_pred_final, average='micro')}
 
         # Recovery rate & Rouge in riferimento al recupero dei dati di training
+        metrics_dict = {}
         rouge = Rouge()
-        recovery_rate = []
-        metrics_dict['rouge-1'] = []
-        metrics_dict['rouge-2'] = []
-        metrics_dict['rouge-l'] = []
-        for i, (sentence_real, sentence_dummy) in enumerate(zip(attack_record['gt_data'], attack_record['last_dummy_data'])):
-            recovery_rate.append(0)
-            for word in sentence_real:
-                if word in sentence_dummy:
-                    recovery_rate[i] += 1
-
+        for i, (sentence_real, sentence_dummy) in enumerate(zip(metrics_dict['gt_data'], metrics_dict['last_dummy_data'])):
+            sentence_real = re.sub(r'[^\w\s]', '', sentence_real)
+            sentence_dummy = re.sub(r'[^\w\s]', '', sentence_dummy)
+            words_dummy = sentence_dummy.split()
+            words_real = sentence_real.split()
+            len_real = len(words_real)
+            recovery = 0
+            for word in words_dummy:
+                try:
+                    words_real.remove(word)
+                    recovery += 1
+                except ValueError:
+                    pass
             scores = rouge.get_scores(sentence_real, sentence_dummy, avg=None)
-            # 'r' recall, 'p' precision, 'f' f-score
-            metrics_dict['rouge-1'].append(scores[0]['rouge-1'])
-            metrics_dict['rouge-2'].append(scores[0]['rouge-2'])
-            metrics_dict['rouge-l'].append(scores[0]['rouge-l'])
-        # Calcola la percentuale di recupero del testo
-        for i, rr in enumerate(recovery_rate):
-            recovery_rate[i] = rr / len(gt_data[i])
+            metrics_dict[str(i) + ' ' + 'rouge-1'] = scores[0]['rouge-1']
+            metrics_dict[str(i) + ' ' + 'rouge-2'] = scores[0]['rouge-2']
+            metrics_dict[str(i) + ' ' + 'rouge-l'] = scores[0]['rouge-l']
 
-        metrics_dict['recovery_rate'] = recovery_rate
+            # Calcola la percentuale di recupero del testo
+            metrics_dict[str(i) + ' ' + 'recovery_rate'] = recovery / len_real
 
-        pickle.dump(metrics_dict, open(save_path + '/measure_leakage_round={}_gloiter={}.pickle'.format(r, global_iter),'wb'))
+        pickle.dump(metrics_dict, open(save_path + '/measure_leakage}_gloiter={}_round={}_power={}_decay_rate={}.pickle'.format(global_iter, r, ),'wb'))
 
     return attack_record_list
 

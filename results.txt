@@ -1,0 +1,21 @@
+I 20 file con il valore di recovery più alto sono:
+measure_leakage_gloiter=0_power=0.6_decay_rate=21.4.pickle - 0.6666666666666666
+measure_leakage_gloiter=0_power=0.6_decay_rate=2.3.pickle - 0.6
+measure_leakage_gloiter=0_power=0.6_decay_rate=22.3.pickle - 0.6
+measure_leakage_gloiter=0_power=1.2_decay_rate=13.2.pickle - 0.6
+measure_leakage_gloiter=0_power=0.6_decay_rate=9.0.pickle - 0.5333333333333333
+measure_leakage_gloiter=0_power=0.7_decay_rate=3.4.pickle - 0.5333333333333333
+measure_leakage_gloiter=0_power=0.7_decay_rate=4.7.pickle - 0.5333333333333333
+measure_leakage_gloiter=0_power=0.8_decay_rate=7.1.pickle - 0.5333333333333333
+measure_leakage_gloiter=0_power=0.9_decay_rate=20.0.pickle - 0.5333333333333333
+measure_leakage_gloiter=0_power=0.2_decay_rate=2.4.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=0.2_decay_rate=4.6.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=0.4_decay_rate=22.8.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=0.4_decay_rate=22.9.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=0.6_decay_rate=15.5.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=0.6_decay_rate=21.9.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=0.7_decay_rate=2.0.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=1.2_decay_rate=15.1.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=1.2_decay_rate=21.7.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=1.2_decay_rate=22.4.pickle - 0.4666666666666667
+measure_leakage_gloiter=0_power=1.2_decay_rate=9.7.pickle - 0.4666666666666667

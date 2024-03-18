@@ -1,37 +1,39 @@
 python main.py `
---experiment_name distilbert_alpha_15_ `
+--experiment_name distilbert_tuning_parameters_law_11`
 --model_name_or_path distilbert/distilbert-base-uncased `
 --learning_rate 0.05 `
 --num_train_epochs 1 `
 --experiment_rounds 1 `
---global_iterations 1500 `
+--global_iterations 1 `
 --max_length 16 `
+--batch_size_train 1 `
 --is_dlg 1 `
 --dlg_attack_interval 300 `
---dlg_attack_rounds 2 `
---dlg_iterations 1000 `
+--dlg_attack_rounds 1 `
+--dlg_iterations 200 `
 --dlg_lr 0.05 `
---alpha 15 `
+--decay_rate_alpha 0.08 `
 --is_DP 0 `
 --dp_C 0.0 `
 --dp_epsilon 0 `
 --dp_delta 0
 
-decay_rate 20 e power 0.9
 
-!python main.py --experiment_name bert_alpha_10_dp_0_lr_0.05_len_16 \
---model_name_or_path google-bert/bert-base-uncased \
+
+
+!python main.py --experiment_name distilbert_tuning_parameters_law_05 \
+--model_name_or_path distilbert/distilbert-base-uncased \
 --learning_rate 0.05 \
 --num_train_epochs 1 \
 --experiment_rounds 1 \
---global_iterations 1500 \
+--global_iterations 1 \
 --max_length 16 \
 --is_dlg 1 \
 --dlg_attack_interval 300 \
---dlg_attack_rounds 2 \
---dlg_iterations 500 \
+--dlg_attack_rounds 1 \
+--dlg_iterations 200 \
 --dlg_lr 0.05 \
---alpha 10 \
+--decay_rate_alpha 0.08 \
 --is_DP 0 \
 --dp_C 0.0 \
 --dp_epsilon 0 \

@@ -129,6 +129,7 @@ def init_dummy_data2(batch_size, model, max_length, device, num_labels, tokenize
     with torch.no_grad():
         dummy_labels = torch.nn.Parameter(F.softmax(torch.randn((batch_size, max_length, num_labels)),dim=2).to(device))
         sentence = torch.tensor(sentence).to(device)
+
     return sentence, dummy_labels
 
 

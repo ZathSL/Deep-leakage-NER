@@ -8,6 +8,8 @@ import time
 from torch.utils.data import DataLoader
 from sklearn import metrics
 import dlg_attack
+import find_parameter
+import find_parameter_local
 import util
 import torch
 from datasets import ClassLabel, load_dataset
@@ -20,7 +22,7 @@ from transformers import (
 def main(args):
     # Disabilita l'utilizzo della libreria cuDNN (Cuda Deep Neural Network library)
     # durante l'esecuzione delle operazioni di deep learning su GPU
-    #torch.backends.cudnn.enabled = False
+    torch.backends.cudnn.enabled = False
 
     # Scelta del dispositivo su cui eseguire le operazioni di deep learning
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -250,7 +252,7 @@ def main(args):
                 # =========================================== dlg attack =========================================== #
                 # Esegue un attacco di leakage durante l'addestramento
                 if args.is_dlg == 1 and iter % args.dlg_attack_interval == 0:
-                    attack_record = dlg_attack.dlg_attack(args,
+                    attack_record = find_parameter.find_parameter(args,
                                                batch=batch,
                                                batch_size=args.batch_size_train,
                                                model=copy.deepcopy(model),
